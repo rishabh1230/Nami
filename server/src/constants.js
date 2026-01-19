@@ -21,5 +21,6 @@ export const SUPPORTED_PLACE_TYPES = [
   "gym",
   "cafe",
   "hospital",
-  "school"
+  "school",
+  "restaurant"
 ];

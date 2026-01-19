@@ -4,10 +4,14 @@ import {
   PLACE_DETAILS_FIELDS
 } from "../constants.js";
 
+/* ----------------------------------------------------
+   ENV CHECK
+---------------------------------------------------- */
 console.log("ENV CHECK:", {
   PLACES_API_KEY: !!process.env.PLACES_API_KEY,
   GEMINI_API_KEY: !!process.env.GEMINI_API_KEY
 });
+
 const API_KEY = process.env.PLACES_API_KEY;
 
 if (!API_KEY) {
@@ -15,10 +19,9 @@ if (!API_KEY) {
   process.exit(1);
 }
 
-/* ------------------------------------------------------------------ */
-/* 🔍 Resolve place by NAME + optional location bias (UNCHANGED LOGIC) */
-/* ------------------------------------------------------------------ */
-
+/* ----------------------------------------------------
+   🔍 Search place by NAME (Text Search)
+---------------------------------------------------- */
 export const searchPlaceByName = async (name, coordinates = null) => {
   const params = {
     query: name,
@@ -42,10 +45,9 @@ export const searchPlaceByName = async (name, coordinates = null) => {
   return response.data.results[0].place_id;
 };
 
-/* ------------------------------------------------------------------ */
-/* 📋 Get FULL place details (UNCHANGED, LEGACY SAFE)                  */
-/* ------------------------------------------------------------------ */
-
+/* ----------------------------------------------------
+   📋 Get FULL place details
+---------------------------------------------------- */
 export const getPlaceDetails = async (placeId) => {
   const response = await axios.get(
     `${GOOGLE_PLACES_BASE_URL}/details/json`,
@@ -61,26 +63,21 @@ export const getPlaceDetails = async (placeId) => {
   if (response.data.status !== "OK") {
     console.error("❌ Place Details API ERROR:", response.data);
     throw new Error(
-      `Place details failed: ${response.data.status} - ${
-        response.data.error_message || "No message"
-      }`
+      `Place details failed: ${response.data.status}`
     );
   }
 
   return response.data.result;
 };
 
-/* ------------------------------------------------------------------ */
-/* 🧭 NEW: Find nearby places of SAME TYPE around a CITY LOCATION      */
-/* ------------------------------------------------------------------ */
-/* Used for: recommending similar places near CURRENT CITY            */
-/* ------------------------------------------------------------------ */
-
+/* ----------------------------------------------------
+   🧭 Find nearby places by TYPE at a LOCATION
+---------------------------------------------------- */
 export const findNearbyPlacesByTypeAtLocation = async ({
   lat,
   lng,
   type,
-  radius = 10000,   // 10 km default
+  radius = 10000,
   maxResults = 15
 }) => {
   const response = await axios.get(
@@ -95,6 +92,10 @@ export const findNearbyPlacesByTypeAtLocation = async ({
       timeout: 15000
     }
   );
+
+  if (response.data.status === "ZERO_RESULTS") {
+    return [];
+  }
 
   if (response.data.status !== "OK") {
     throw new Error(

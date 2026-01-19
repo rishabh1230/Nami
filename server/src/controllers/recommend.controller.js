@@ -8,13 +8,25 @@ import {
 import { normalizePlaceProfile } from "../utils/normalizer.js";
 import { comparePlacesWithGemini } from "../services/geminiCompare.service.js";
 
+/* ----------------------------------------------------
+   Helper: normalize Google place type
+---------------------------------------------------- */
+const normalizePlaceType = (type) => {
+  if (!type) return null;
+  return type.toLowerCase().replace(/\s+/g, "_");
+};
+
 export const recommendPlaces = async (req, res) => {
   try {
     const { previous_city, current_city, source_places } = req.body;
 
+    /* ---------------- VALIDATION ---------------- */
+
     if (
-      !previous_city?.coordinates ||
-      !current_city?.coordinates ||
+      !previous_city?.coordinates?.lat ||
+      !previous_city?.coordinates?.lng ||
+      !current_city?.coordinates?.lat ||
+      !current_city?.coordinates?.lng ||
       !Array.isArray(source_places)
     ) {
       return res.status(400).json({
@@ -25,24 +37,29 @@ export const recommendPlaces = async (req, res) => {
 
     const results = [];
 
+    /* ---------------- PROCESS SOURCE PLACES ---------------- */
+
     for (const place of source_places) {
-      const { name, type, coordinates } = place;
+      const rawType = place.type;
+      const type = normalizePlaceType(rawType);
 
       if (
-        !name ||
+        !place.name ||
+        !type ||
         !SUPPORTED_PLACE_TYPES.includes(type) ||
-        typeof coordinates?.lat !== "number" ||
-        typeof coordinates?.lng !== "number"
+        typeof place.coordinates?.lat !== "number" ||
+        typeof place.coordinates?.lng !== "number"
       ) {
+        console.warn("⚠️ Skipping invalid source place:", place);
         continue;
       }
 
-      /* ========== 1️⃣ SOURCE PLACE ========== */
+      /* ========== 1️⃣ Resolve SOURCE place ========== */
 
       const resolvedSource = await resolveSourcePlace({
-        name,
+        name: place.name,
         type,
-        coordinates
+        coordinates: place.coordinates
       });
 
       const sourceDriving = await getDrivingDistanceWithTraffic({
@@ -53,16 +70,18 @@ export const recommendPlaces = async (req, res) => {
       const sourceDistanceKm =
         sourceDriving.distance_meters / 1000;
 
-      /* ========== 2️⃣ CANDIDATES IN CURRENT CITY ========== */
+      /* ========== 2️⃣ Find CANDIDATES near CURRENT city ========== */
 
-      const candidates =
-        await findNearbyPlacesByTypeAtLocation({
-          lat: current_city.coordinates.lat,
-          lng: current_city.coordinates.lng,
-          type,
-          radius: Math.max(sourceDistanceKm * 1000 + 2000, 3000),
-          maxResults: 8
-        });
+      const searchRadius =
+        Math.max(sourceDistanceKm * 1000 + 2000, 3000);
+
+      const candidates = await findNearbyPlacesByTypeAtLocation({
+        lat: current_city.coordinates.lat,
+        lng: current_city.coordinates.lng,
+        type,
+        radius: searchRadius,
+        maxResults: 10
+      });
 
       const recommendedPlaces = [];
 
@@ -76,8 +95,8 @@ export const recommendPlaces = async (req, res) => {
           const candidateKm =
             driving.distance_meters / 1000;
 
-          const lower = Math.max(sourceDistanceKm - 1, 1.5);
-          const upper = Math.max(sourceDistanceKm + 1, 3.5);
+          const lower = Math.max(sourceDistanceKm - 1, 1);
+          const upper = sourceDistanceKm + 1;
 
           if (candidateKm < lower || candidateKm > upper) continue;
 
@@ -89,9 +108,11 @@ export const recommendPlaces = async (req, res) => {
           try {
             similarity = await comparePlacesWithGemini({
               sourcePlace: resolvedSource,
-              candidatePlace: normalizedCandidate
+              candidatePlace: normalizedCandidate,
+              distanceFromCurrentCityKm: candidateKm,
+              nearbyPlacesCount: candidates.length
             });
-          } catch (aiErr) {
+          } catch {
             similarity = {
               similarity_score: null,
               reasoning: "AI comparison unavailable",
@@ -107,9 +128,8 @@ export const recommendPlaces = async (req, res) => {
             driving_duration_in_traffic: driving.duration_in_traffic_text,
             similarity
           });
-
         } catch (err) {
-          continue;
+          console.error("Candidate failed:", err.message);
         }
       }
 
