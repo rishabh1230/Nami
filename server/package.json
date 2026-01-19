@@ -1,0 +1,31 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "Backend for namigator",
+  "keywords": [
+    "nami",
+    "server"
+  ],
+  "license": "ISC",
+  "author": "Rishabh Pandey",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "@dotenvx/dotenvx": "^1.51.4",
+    "@google/genai": "^1.37.0",
+    "axios": "^1.13.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongoose": "^9.1.4",
+    "multer": "^2.0.2",
+    "nodemon": "^3.1.11",
+    "openai": "^6.16.0",
+    "prettier": "^3.8.0"
+  }
+}
