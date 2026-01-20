@@ -4,54 +4,40 @@ import {
   PLACE_DETAILS_FIELDS
 } from "../constants.js";
 
-/* ----------------------------------------------------
-   ENV CHECK
----------------------------------------------------- */
-console.log("ENV CHECK:", {
-  PLACES_API_KEY: !!process.env.PLACES_API_KEY,
-  GEMINI_API_KEY: !!process.env.GEMINI_API_KEY
-});
-
 const API_KEY = process.env.PLACES_API_KEY;
 
 if (!API_KEY) {
-  console.error("❌ PLACES_API_KEY missing from .env!");
+  console.error("❌ PLACES_API_KEY missing");
   process.exit(1);
 }
 
-/* ----------------------------------------------------
-   🔍 Search place by NAME (Text Search)
----------------------------------------------------- */
+/* ---------- Text Search ---------- */
 export const searchPlaceByName = async (name, coordinates = null) => {
-  const params = {
-    query: name,
-    key: API_KEY
-  };
+  const params = { query: name, key: API_KEY };
 
   if (coordinates) {
     params.location = `${coordinates.lat},${coordinates.lng}`;
     params.radius = 1000;
   }
 
-  const response = await axios.get(
+  const res = await axios.get(
     "https://maps.googleapis.com/maps/api/place/textsearch/json",
-    { params }
+    { params, timeout: 8000 }
   );
 
-  if (response.data.status !== "OK" || !response.data.results?.length) {
+  if (res.data.status !== "OK" || !res.data.results?.length) {
     throw new Error(`No place found for "${name}"`);
   }
 
-  return response.data.results[0].place_id;
+  return res.data.results[0].place_id;
 };
 
-/* ----------------------------------------------------
-   📋 Get FULL place details
----------------------------------------------------- */
+/* ---------- Place Details ---------- */
 export const getPlaceDetails = async (placeId) => {
-  const response = await axios.get(
+  const res = await axios.get(
     `${GOOGLE_PLACES_BASE_URL}/details/json`,
     {
+      timeout: 8000,
       params: {
         place_id: placeId,
         fields: PLACE_DETAILS_FIELDS,
@@ -60,59 +46,70 @@ export const getPlaceDetails = async (placeId) => {
     }
   );
 
-  if (response.data.status !== "OK") {
-    console.error("❌ Place Details API ERROR:", response.data);
-    throw new Error(
-      `Place details failed: ${response.data.status}`
-    );
+  if (res.data.status !== "OK") {
+    throw new Error("Place details failed");
   }
 
-  return response.data.result;
+  return res.data.result;
 };
 
-/* ----------------------------------------------------
-   🧭 Find nearby places by TYPE at a LOCATION
----------------------------------------------------- */
+/* ---------- Nearby Search (TYPE ONLY) ---------- */
 export const findNearbyPlacesByTypeAtLocation = async ({
   lat,
   lng,
   type,
-  radius = 10000,
-  maxResults = 15
+  radius = 5000,
+  maxResults = 10
 }) => {
-  const response = await axios.get(
-    `${GOOGLE_PLACES_BASE_URL}/nearbysearch/json`,
-    {
-      params: {
-        location: `${lat},${lng}`,
-        radius,
-        type,
-        key: API_KEY
-      },
-      timeout: 15000
-    }
-  );
-
-  if (response.data.status === "ZERO_RESULTS") {
+  if (
+    typeof lat !== "number" ||
+    typeof lng !== "number" ||
+    !type ||
+    !Number.isFinite(radius)
+  ) {
+    console.warn("⚠️ Skipping nearby search (invalid params)", {
+      lat,
+      lng,
+      type,
+      radius
+    });
     return [];
   }
 
-  if (response.data.status !== "OK") {
-    throw new Error(
-      `Nearby search failed: ${response.data.status}`
-    );
-  }
-
-  return (response.data.results || [])
-    .slice(0, maxResults)
-    .map(place => ({
-      place_id: place.place_id,
-      name: place.name,
-      rating: place.rating || 0,
-      user_ratings_total: place.user_ratings_total || 0,
-      coordinates: {
-        lat: place.geometry.location.lat,
-        lng: place.geometry.location.lng
+  try {
+    const res = await axios.get(
+      `${GOOGLE_PLACES_BASE_URL}/nearbysearch/json`,
+      {
+        timeout: 8000,
+        params: {
+          location: `${lat},${lng}`,
+          radius,
+          type,
+          key: API_KEY
+        }
       }
-    }));
+    );
+
+    if (
+      res.data.status !== "OK" &&
+      res.data.status !== "ZERO_RESULTS"
+    ) {
+      console.warn("⚠️ Nearby search status:", res.data.status);
+      return [];
+    }
+
+    return (res.data.results || [])
+      .slice(0, maxResults)
+      .map(p => ({
+        place_id: p.place_id,
+        name: p.name,
+        coordinates: {
+          lat: p.geometry.location.lat,
+          lng: p.geometry.location.lng
+        }
+      }));
+  } catch (err) {
+    console.warn("⚠️ Nearby search failed:", err.message);
+    return [];
+  }
 };
